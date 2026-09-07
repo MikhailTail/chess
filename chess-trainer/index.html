@@ -366,11 +366,11 @@ let stack=[S0()], cur=0, sel=-1, targets=[], pending=null, hintMove=null;
 /* ================= 人机模式 & 机器人档位 ================= */
 let mode='ai', humanColor=WHITE, level='club', aiBusy=false, aiTimer=null;
 const AI_LEVELS={
-  rookie :{name:'♙ 菜鸟',depth:1,eps:.40,noise:45,think:280},
-  amateur:{name:'♘ 业余',depth:2,eps:.15,noise:30,think:340},
-  club   :{name:'♗ 好手',depth:3,eps:0,noise:0,think:450},
-  master :{name:'♕ 大师',depth:4,eps:0,noise:0,think:650},
-  legend :{name:'♚ 传奇',depth:5,eps:0,noise:0,think:950}
+  rookie :{name:'♙ 菜鸟',depth:1,eps:.40,noise:45,think:280,bookPow:0},
+  amateur:{name:'♘ 业余',depth:2,eps:.15,noise:30,think:340,bookPow:1},
+  club   :{name:'♗ 好手',depth:3,eps:0,noise:0,think:450,bookPow:2},
+  master :{name:'♕ 大师',depth:4,eps:0,noise:0,think:650,bookPow:3},
+  legend :{name:'♚ 传奇',depth:5,eps:0,noise:0,think:950,bookPow:5}
 };
 /* ============ 开局书：取材自维基百科经典开局条目 ============ */
 /* moves 为 UCI 主变（如 'e2e4'）；AI 开局会沿主变行棋，展示真实开局理论 */
@@ -429,9 +429,19 @@ function bookNameAt(plies){
   return best;
 }
 function bookReply(){
-  // AI 已按书走至第 cur 半回合：书内仍有续着则返回书着
-  const hit=bookNameAt(cur);
-  return hit?uciToMove(S(),hit.moves[cur]):null;
+  // AI 已按书走至第 cur 半回合：在仍与已走着法吻合的候选开局中，
+  // 按档位 bookPow 加权随机挑一个续着——低难度变化多、高难度偏向理论主变
+  const plies=cur, cand=bookCand(plies);
+  if(!cand.length)return null;
+  const cnt={};
+  for(const op of cand)cnt[op.moves[plies]]=(cnt[op.moves[plies]]||0)+1;
+  const p=AI_LEVELS[level].bookPow;
+  const arr=Object.keys(cnt);
+  const ws=arr.map(u=>Math.pow(cnt[u],p));
+  let tot=0; for(const w of ws)tot+=w;
+  let r=Math.random()*tot;
+  for(let i=0;i<arr.length;i++){r-=ws[i];if(r<=0)return uciToMove(S(),arr[i]);}
+  return uciToMove(S(),arr[arr.length-1]);
 }
 const S=()=>stack[cur];
 const GLYPHS={1:'♟',2:'♞',3:'♝',4:'♜',5:'♛',6:'♚'};

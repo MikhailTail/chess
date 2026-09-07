@@ -1,5 +1,5 @@
 /* 象棋训练器 Service Worker：预缓存全部静态资源，支持离线运行 */
-const CACHE_NAME = 'chess-trainer-v3';
+const CACHE_NAME = 'chess-trainer-v4';
 const ASSETS = [
   './',
   './index.html',
