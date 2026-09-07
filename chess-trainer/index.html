@@ -4,6 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>象棋训练器 - 棋盘 · 棋规 · 评估</title>
+<meta name="theme-color" content="#16131f">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="象棋训练">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
 <style>
 :root{
   --board:#f0d9b5; --board-dark:#b58863; --accent:#e07b39; --ink:#2b2b2b;
@@ -724,6 +732,14 @@ document.getElementById('modeSel').addEventListener('change',e=>{
 document.getElementById('humanSideSel').addEventListener('change',e=>{humanColor=+e.target.value;resetGame();});
 document.getElementById('diffSel').addEventListener('change',e=>{level=e.target.value;updateAiThink();});
 updateAll();
+</script>
+<script>
+/* ---- PWA：注册 Service Worker 以支持离线运行 ---- */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(e => console.warn('Service Worker 注册失败:', e));
+  });
+}
 </script>
 </body>
 </html>
