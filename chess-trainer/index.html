@@ -120,7 +120,7 @@ footer{font-size:12px;color:#7a7296;margin-top:14px}
       <div class="panelTitle">引擎评估（含搜索）</div>
       <div style="display:flex;align-items:baseline;gap:10px;margin:8px 0 6px">
         <span class="num red" id="evalScore">+0.0</span>
-        <span style="font-size:11px;color:#8f88ad">白方优势为正值 · 左侧为实时胜率</span>
+        <span style="font-size:11px;color:#8f88ad" id="evalNote">白方优势为正值 · 左侧为实时胜率</span>
       </div>
       <div id="evalHint">评估 = 子力 + 位置分(PST) + 引擎搜索。白方行棋中。</div>
     </div>
@@ -142,7 +142,7 @@ footer{font-size:12px;color:#7a7296;margin-top:14px}
       <ul class="ruleList">
         <li>王不可走进被攻击格；不能"送王"。</li>
         <li>易位条件：王/车未动、中间无子、王不经过被攻击格。</li>
-        <li>吃过路兵：敌方兵从身边连走两格后，可立即斜吃。</li>
+        <li>吃过路兵：对方兵从初始位置首次移动两格，落点横向相邻格存在你的兵，且你的兵位于特定横线时，你可以执行吃过路兵。</li>
         <li>兵到底线必须升变为后/车/象/马。</li>
         <li>逼和（无着可走且未被将军）判和；三次重复/50回合由你自行申明。</li>
       </ul>
@@ -440,9 +440,10 @@ const CELL=()=>cv.width/8;
 function sqName(i){return FILES[i&7]+((i>>3)+1);}
 function rAFDraw(){draw();}
 function draw(){
-  const C=CELL();
+  const C=CELL(), rev=(mode==='ai'&&humanColor===BLACK);
+  const XY=i=>{const f=i&7,r=i>>3;return rev?[(7-f)*C,r*C]:[f*C,(7-r)*C];};
   for(let i=0;i<64;i++){
-    const f=i&7, r=i>>3, x=f*C, y=(7-r)*C;
+    const f=i&7, r=i>>3, [x,y]=XY(i);
     cx.fillStyle=((r+f)&1)?'#b58863':'#f0d9b5';
     if(stack[cur].last&&(stack[cur].last.f===i||stack[cur].last.t===i))cx.fillStyle=(cx.fillStyle==='#f0d9b5')?'#f7ec7a':'#d9b64a';
     if(i===sel)cx.fillStyle='#e8c96a';
@@ -462,18 +463,18 @@ function draw(){
     }
   }
   cx.fillStyle='rgba(60,30,0,.75)';cx.font=(C*0.26)+'px sans-serif';cx.textAlign='left';cx.textBaseline='top';
-  for(let f=0;f<8;f++)cx.fillText(FILES[f],f*C+C*0.06,(8*C)-C*0.72);
-  for(let r=0;r<8;r++)cx.fillText(String(r+1),C*0.06,(7-r)*C+C*0.06);
+  for(let f=0;f<8;f++)cx.fillText(rev?FILES[7-f]:FILES[f],f*C+C*0.06,(8*C)-C*0.72);
+  for(let r=0;r<8;r++)cx.fillText(String(r+1),C*0.06,(rev?r:(7-r))*C+C*0.06);
   if(sel>=0){
     for(const m of targets){
-      const f=m.t&7,r=m.t>>3,x=f*C,y=(7-r)*C;
+      const [x,y]=XY(m.t);
       cx.beginPath();cx.arc(x+C/2,y+C/2,C*0.16,0,7);
       cx.fillStyle=m.cap?'rgba(0,0,0,.28)':'rgba(0,0,0,.22)';cx.fill();
     }
   }
   if(hintMove){
     for(const g of [hintMove.f,hintMove.t]){
-      const f=g&7,r=g>>3,x=f*C,y=(7-r)*C;
+      const [x,y]=XY(g);
       cx.strokeStyle='#ff9d2e';cx.lineWidth=Math.max(2,C*0.07);
       cx.strokeRect(x+C*0.05,y+C*0.05,C*0.9,C*0.9);
     }
@@ -484,7 +485,7 @@ function clickAt(ev){
   const f=Math.floor((ev.clientX-rc.left)*8/rc.width);
   const r=Math.floor((ev.clientY-rc.top)*8/rc.height);
   if(f<0||f>7||r<0||r>7)return;
-  const i=(7-r)*8+f;
+  const i=(mode==='ai'&&humanColor===BLACK)?r*8+(7-f):(7-r)*8+f;
   if(pending)return;
   if(mode==='ai'&&S().turn!==humanColor)return; // 机器人回合禁止操作
   if(endStatus(S())!==null){sel=-1;targets=[];draw();return;}
@@ -557,11 +558,14 @@ function updateEval(){
   let sc, bm=null;
   if(terminal!==null){sc=terminal===0?0:(terminal===WHITE?-20000:20000);}
   else{const r=searchBest(st,2); bm=r.m; sc=r.score;}
+  const pv=(mode==='ai'&&humanColor===BLACK)?-1:1; // 执黑时以黑方为展示视角：正值=黑优
+  const shown=sc*pv;
   const el=document.getElementById('evalScore');
-  const pawns=(sc/100).toFixed(1);
-  const val=sc>0?'+'+pawns:pawns;
+  const pawns=(shown/100).toFixed(1);
+  const val=shown>0?'+'+pawns:pawns;
   el.textContent=val;
-  el.style.color=sc>=0?'#ff8a80':'#80d8ff';
+  el.style.color=shown>=0?'#ff8a80':'#80d8ff';
+  document.getElementById('evalNote').textContent=pv<0?'黑方优势为正值 · 左侧为实时胜率（黑方视角）':'白方优势为正值 · 左侧为实时胜率';
   const wp=terminal===0?50:(terminal===WHITE?0:(terminal===BLACK?100:winProbCp(sc)));
   document.getElementById('winWhiteL').textContent='白 '+wp+'%';
   document.getElementById('winBlackL').textContent='黑 '+(100-wp)+'%';
@@ -682,7 +686,8 @@ document.getElementById('hintBtn').addEventListener('click',()=>{
   if(!bm){hint.textContent='引擎未能找到可行着法';return;}
   hintMove=bm;
   draw(); // 立即高亮推荐着法的起止格
-  hint.innerHTML='💡 AI 最佳着：<b>'+who+' 走 '+sqName(bm.f)+' → '+sqName(bm.t)+'</b>'+(bm.cap?'（吃子）':'')+' · 引擎评估 ≈ '+(r.score/100).toFixed(1);
+  const ps=(mode==='ai'&&humanColor===BLACK)?-1:1;
+  hint.innerHTML='💡 AI 最佳着：<b>'+who+' 走 '+sqName(bm.f)+' → '+sqName(bm.t)+'</b>'+(bm.cap?'（吃子）':'')+' · 引擎评估 ≈ '+((r.score*ps)/100).toFixed(1);
 });
 document.getElementById('newBtn').addEventListener('click',resetGame);
 /* ---- 开局书：预览与摆子 ---- */
@@ -734,7 +739,7 @@ document.getElementById('diffSel').addEventListener('change',e=>{level=e.target.
 updateAll();
 </script>
 <script>
-/* ---- PWA：注册 Service Worker 以支持离线运行 ---- */
+/* ---- PWA: 注册 Service Worker 以支持离线运行 ---- */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./sw.js').catch(e => console.warn('Service Worker 注册失败:', e));
