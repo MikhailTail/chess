@@ -1,0 +1,8 @@
+# 依赖
+node_modules/
+
+# 日志
+*.log
+
+# 临时/调试产物
+chess-trainer/_oracle/_shot.png

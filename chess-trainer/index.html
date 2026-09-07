@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>象棋训练器 - 棋盘 · 棋规 · 评估</title>
+<style>
+:root{
+  --board:#f0d9b5; --board-dark:#b58863; --accent:#e07b39; --ink:#2b2b2b;
+  --line:#6b4a2f; --hl:#ffe08a66; --sel:#e07b3966; --danger:#d64545;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,'Segoe UI','Microsoft YaHei',sans-serif;background:linear-gradient(160deg,#1f1c2c,#2b2638 60%,#1a1625);color:#eee;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:18px}
+header{text-align:center;margin-bottom:14px}
+header h1{font-size:22px;letter-spacing:2px;color:#fff}
+header p{font-size:13px;color:#b9b2cc;margin-top:4px}
+#wrap{display:flex;gap:22px;flex-wrap:wrap;justify-content:center;align-items:flex-start}
+#ctlBar{display:flex;gap:14px;flex-wrap:wrap;align-items:center;justify-content:center;background:#2e2a3d;border-radius:12px;padding:9px 16px;margin-bottom:16px;box-shadow:0 8px 30px #0006;font-size:13px}
+#ctlBar label{color:#b9b2cc;display:inline-flex;align-items:center;gap:6px}
+#ctlBar select{background:#3a3550;color:#eee;border:1px solid #555070;border-radius:6px;padding:4px 8px;font-size:13px;cursor:pointer}
+#ctlBar select:disabled{opacity:.45;cursor:not-allowed}
+#aiThink{font-size:12px;color:#80d8ff;min-height:16px}
+#boardPanel{background:#2e2a3d;border-radius:14px;padding:16px;box-shadow:0 8px 30px #0006}
+#boardRow{display:flex;gap:12px;align-items:stretch}
+#winCol{width:50px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:5px;padding:2px 0 4px;flex:0 0 auto}
+#winCol .wl{font-size:11px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1}
+#winWhiteL{color:#f2efe6}
+#winBlackL{color:#15161c;background:rgba(0,0,0,.14);padding:1px 4px;border-radius:4px}
+#winBarWrap{flex:1;width:16px;min-height:70px;background:#15161c;border:1px solid #48415e;border-radius:8px;overflow:hidden;position:relative}
+#winBar{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(to top,#f2efe6,#c9c2e0);transition:height .4s}
+#board{position:relative;width:min(500px,calc(92vw - 130px));aspect-ratio:1;user-select:none;background:var(--board)}
+#board canvas{width:100%;height:100%;display:block;border-radius:6px}
+#side{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:13px}
+#turnBadge{background:var(--accent);padding:3px 12px;border-radius:20px;font-weight:700;font-size:12px}
+#undoBtn,#hintBtn,#evalModeBtn{background:#3a3550;border:1px solid #555070;color:#ddd;padding:6px 14px;border-radius:8px;cursor:pointer;font-size:13px}
+#undoBtn:hover,#hintBtn:hover,#evalModeBtn:hover{background:#4a4470}
+button:disabled{opacity:.4;cursor:not-allowed}
+#infoPanel{width:min(340px,92vw);background:#2e2a3d;border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:14px;box-shadow:0 8px 30px #0006}
+.panelTitle{font-size:13px;color:#b9b2cc;letter-spacing:1px;border-bottom:1px solid #48415e;padding-bottom:6px}
+#evalBox .num{font-size:28px;font-weight:800}
+#evalBox .num.red{color:#ff8a80} #evalBox .num.black{color:#80d8ff}
+
+#evalHint{font-size:12px;color:#b9b2cc;margin-top:6px;line-height:1.6}
+#moveList{flex:1;min-height:120px;max-height:220px;overflow-y:auto;font-family:Consolas,monospace;font-size:13px;line-height:1.9}
+#moveList .idx{color:#7a7296;margin-right:6px}
+#moveList .last{background:#3a3550;border-radius:4px}
+#statusBar{background:#3a3550;border-radius:8px;padding:8px 12px;font-size:13px;color:#e8e2ff;text-align:center}
+.winnerBox{background:var(--accent);color:#fff;font-weight:700}
+#histTable{width:100%;border-collapse:collapse;font-size:12px;color:#c9c2e0}
+#histTable th,#histTable td{border:1px solid #48415e;padding:3px 6px;text-align:center}
+#histTable th{color:#8f88ad;font-weight:400;background:#34304a}
+footer{font-size:12px;color:#7a7296;margin-top:14px}
+.ruleList{font-size:12px;color:#c9c2e0;line-height:1.8;padding-left:16px}
+.ruleList li{margin-bottom:2px}
+#statusMsg{animation:fade .3s}
+@keyframes fade{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+::-webkit-scrollbar{width:6px}::-webkit-scrollbar-thumb{background:#555070;border-radius:3px}
+</style>
+</head>
+<body>
+<header>
+  <h1>♟ 象棋训练器</h1>
+  <p>国际象棋 · 完整棋规校验（入堡/吃过路兵/升变/王车易位）· 局面评估</p>
+</header>
+<div id="ctlBar">
+  <label>模式
+    <select id="modeSel">
+      <option value="ai" selected>🤖 人机对战</option>
+      <option value="pvp">👥 双人对弈</option>
+    </select>
+  </label>
+  <label>执子
+    <select id="humanSideSel">
+      <option value="8" selected>白方</option>
+      <option value="16">黑方</option>
+    </select>
+  </label>
+  <label>机器人
+    <select id="diffSel">
+      <option value="rookie">♙ 菜鸟</option>
+      <option value="amateur">♘ 业余</option>
+      <option value="club" selected>♗ 好手</option>
+      <option value="master">♕ 大师</option>
+      <option value="legend">♚ 传奇</option>
+    </select>
+  </label>
+  <span id="aiThink"></span>
+</div>
+<div id="wrap">
+  <div id="boardPanel">
+    <div id="side">
+      <span id="turnBadge">白方走棋</span>
+      <span style="color:#8f88ad" id="moveCount">第 1 回合</span>
+    </div>
+    <div id="boardRow">
+      <div id="winCol">
+        <span class="wl" id="winWhiteL">白 50%</span>
+        <div id="winBarWrap"><div id="winBar"></div></div>
+        <span class="wl" id="winBlackL">黑 50%</span>
+      </div>
+      <div id="board"><canvas id="cv" width="480" height="480"></canvas></div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:space-between;margin-top:12px">
+      <button id="undoBtn" disabled>↩ 悔棋</button>
+      <button id="hintBtn">💡 最佳着</button>
+      <button id="newBtn">↺ 新局</button>
+      <button id="evalModeBtn" style="display:none">自动评估: 开</button>
+    </div>
+  </div>
+  <div id="infoPanel">
+    <div id="evalBox">
+      <div class="panelTitle">引擎评估（含搜索）</div>
+      <div style="display:flex;align-items:baseline;gap:10px;margin:8px 0 6px">
+        <span class="num red" id="evalScore">+0.0</span>
+        <span style="font-size:11px;color:#8f88ad">白方优势为正值 · 左侧为实时胜率</span>
+      </div>
+      <div id="evalHint">评估 = 子力 + 位置分(PST) + 引擎搜索。白方行棋中。</div>
+    </div>
+    <div id="bookBox">
+      <div class="panelTitle">开局书 · 维基百科经典开局</div>
+      <div id="bookCur" style="font-size:12px;color:#e8e2ff;margin:4px 0 6px">开局：尚未识别</div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <select id="bookSel" style="background:#3a3550;color:#eee;border:1px solid #555070;border-radius:6px;padding:4px 6px;font-size:12px;flex:1;min-width:150px"></select>
+        <button id="bookGoBtn" style="background:#3a3550;border:1px solid #555070;color:#ddd;padding:5px 10px;border-radius:8px;cursor:pointer;font-size:12px">摆此开局</button>
+      </div>
+      <div id="bookLine" style="font-size:11px;color:#8f88ad;margin-top:6px;line-height:1.6"></div>
+    </div>
+    <div>
+      <div class="panelTitle">着法记录</div>
+      <div id="moveList"><span style="color:#7a7296">尚无着法</span></div>
+    </div>
+    <div>
+      <div class="panelTitle">棋规速查</div>
+      <ul class="ruleList">
+        <li>王不可走进被攻击格；不能"送王"。</li>
+        <li>易位条件：王/车未动、中间无子、王不经过被攻击格。</li>
+        <li>吃过路兵：敌方兵从身边连走两格后，可立即斜吃。</li>
+        <li>兵到底线必须升变为后/车/象/马。</li>
+        <li>逼和（无着可走且未被将军）判和；三次重复/50回合由你自行申明。</li>
+      </ul>
+    </div>
+    <div id="statusBar" style="display:none"></div>
+  </div>
+</div>
+<footer>点击 白/黑 棋子走子 · 引擎自动评估并推荐最佳着</footer>
+<script>
+"use strict";
+/* ============ 引擎：棋盘、规则、评估、搜索 ============ */
+const EMPTY = 0, P=1,N=2,B=3,R=4,Q=5,K=6, WHITE=8, BLACK=16;
+const val={1:100,2:320,3:330,4:500,5:900,6:20000};
+function king(i){return (i>>3)&1;}
+function initBoard(){ // 标准初始局面，idx=rank*8+file，rank0=最底行(白方)
+  const b=new Array(64).fill(0);
+  const back=[R,N,B,Q,K,B,N,R];
+  for(let f=0;f<8;f++){ b[f]=WHITE|back[f]; b[8+f]=WHITE|P; b[48+f]=BLACK|P; b[56+f]=BLACK|back[f]; }
+  return b;
+}
+function clone(b){return b.slice();}
+function colorOf(p){return p&24;}
+function pieceOf(p){return p&7;}
+function isOpp(p,c){return p&&colorOf(p)!==c;}
+const FILES='abcdefgh';
+/* ---- 走法生成（不含王的安全过滤，由外层过滤） ---- */
+function genMoves(b,c,castle,ep){
+  const mv=[];
+  function add(f,t,flag){mv.push({f,t,flag:flag||0,piece:b[f],cap:b[t]});}
+  for(let s=0;s<64;s++){
+    const pc=b[s]; if(!pc||colorOf(pc)!==c) continue;
+    const pt=pieceOf(pc), r=s>>3, f=s&7;
+    const push=(fr,fc,flag)=>{const t=fr*8+fc; if(!b[t])add(s,t,flag);};
+    const cap=(fr,fc,flag)=>{const t=fr*8+fc; if(t<0||t>63)return; if(isOpp(b[t],c))add(s,t,flag);};
+    if(pt===P){
+      const dir=(c===WHITE)?1:-1;
+      if(r+dir>=0&&r+dir<8&&!b[(r+dir)*8+f])add(s,(r+dir)*8+f);
+      if((c===WHITE&&r===1||c===BLACK&&r===6)&&!b[(r+dir)*8+f]&&!b[(r+2*dir)*8+f])add(s,(r+2*dir)*8+f,1);
+      for(const df of [-1,1]){const nr=r+dir,nf=f+df; if(nf<0||nf>7)continue;
+        if(isOpp(b[nr*8+nf],c))add(s,nr*8+nf,2);
+        const cs=ep-dir*8;
+        if(ep>=0&&ep===nr*8+nf&&cs>=0&&cs<64&&pieceOf(b[cs])===P&&colorOf(b[cs])!==c)add(s,nr*8+nf,4);
+      }
+    } else if(pt===N){
+      for(const[dR,dF]of[[2,1],[2,-1],[-2,1],[-2,-1],[1,2],[1,-2],[-1,2],[-1,-2]]){
+        const nr=r+dR,nf=f+dF; if(nr<0||nr>7||nf<0||nf>7)continue; const t=nr*8+nf;
+        if(!b[t]||isOpp(b[t],c))add(s,t);
+      }
+    } else if(pt===B){
+      for(const[dR,dF]of[[1,1],[1,-1],[-1,1],[-1,-1]]){
+        let nr=r+dR,nf=f+dF;
+        while(nr>=0&&nr<8&&nf>=0&&nf<8){const t=nr*8+nf; if(!b[t]){add(s,t);}else{if(isOpp(b[t],c))add(s,t);break;} nr+=dR;nf+=dF;}
+      }
+    } else if(pt===R){
+      for(const[dR,dF]of[[1,0],[-1,0],[0,1],[0,-1]]){
+        let nr=r+dR,nf=f+dF;
+        while(nr>=0&&nr<8&&nf>=0&&nf<8){const t=nr*8+nf; if(!b[t]){add(s,t);}else{if(isOpp(b[t],c))add(s,t);break;} nr+=dR;nf+=dF;}
+      }
+    } else if(pt===Q){ // 皇后=象+车：斜线与横竖共 8 个方向
+      for(const[dR,dF]of[[1,1],[1,-1],[-1,1],[-1,-1],[1,0],[-1,0],[0,1],[0,-1]]){
+        let nr=r+dR,nf=f+dF;
+        while(nr>=0&&nr<8&&nf>=0&&nf<8){const t=nr*8+nf; if(!b[t]){add(s,t);}else{if(isOpp(b[t],c))add(s,t);break;} nr+=dR;nf+=dF;}
+      }
+    } else if(pt===K){
+      for(const[dR,dF]of[[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]]){
+        const nr=r+dR,nf=f+dF; if(nr<0||nr>7||nf<0||nf>7)continue; const t=nr*8+nf;
+        if(!b[t]||isOpp(b[t],c))add(s,t);
+      }
+      if(castle&&(c===WHITE?s===4:s===60)){
+        const home=c===WHITE?0:56, ks=c===WHITE?1:4, qs=c===WHITE?2:8;
+        if((castle&ks)&&!b[home+5]&&!b[home+6]&&b[home+7]===(c|R))add(s,home+6,8);
+        if((castle&qs)&&!b[home+1]&&!b[home+2]&&!b[home+3]&&b[home+0]===(c|R))add(s,home+2,16);
+      }
+    }
+  }
+  return mv;
+}
+/* ---- 攻击检测：sq 是否被 byColor 攻击 ---- */
+function attacked(b,sq,byColor){
+  const sr=sq>>3, sf=sq&7;
+  const slide=(r,f,dr,df)=>{let rr=r+dr,ff=f+df;while(rr>=0&&rr<8&&ff>=0&&ff<8){const t=rr*8+ff;if(t===sq)return true;if(b[t])return false;rr+=dr;ff+=df;}return false;};
+  for(let s=0;s<64;s++){
+    const pc=b[s]; if(!pc||colorOf(pc)!==byColor)continue;
+    const pt=pieceOf(pc), r=s>>3, f=s&7;
+    if(pt===P){const d=byColor===WHITE?1:-1; if(r+d===sr&&(f-1===sf||f+1===sf))return true;}
+    else if(pt===N){const dr=Math.abs(sr-r),df=Math.abs(sf-f); if(dr+df===3&&dr>0&&df>0)return true;}
+    else if(pt===K){if(Math.max(Math.abs(sr-r),Math.abs(sf-f))===1)return true;}
+    else if(pt===B){if(Math.abs(sr-r)===Math.abs(sf-f)&&sr!==r){if(slide(r,f,sr>r?1:-1,sf>f?1:-1))return true;}}
+    else if(pt===R){if((sr===r)!==(sf===f)&&(sr!==r||sf!==f)){if(slide(r,f,sr>r?1:sr<r?-1:0,sf>f?1:sf<f?-1:0))return true;}}
+    else if(pt===Q){
+      const diag=Math.abs(sr-r)===Math.abs(sf-f)&&sr!==r;
+      const line=(sr===r)!==(sf===f)&&(sr!==r||sf!==f);
+      if((diag||line)&&slide(r,f,sr>r?1:sr<r?-1:0,sf>f?1:sf<f?-1:0))return true;
+    }
+  }
+  return false;
+}
+function inCheck(b,c){for(let s=0;s<64;s++)if((b[s]&7)===K&&colorOf(b[s])===c)return attacked(b,s,c===WHITE?BLACK:WHITE);return false;}
+function cloneState(s){return{b:s.b.slice(),turn:s.turn,castle:s.castle,ep:s.ep,half:s.half,full:s.full};}
+/* ---- 应用一步棋，返回新状态（move 可选 promo:Q/R/B/N） ---- */
+function applyMove(st,m,promo,doSan){
+  const ns=cloneState(st), b=ns.b;
+  const pc=b[m.f], pt=pieceOf(pc), c=colorOf(pc);
+  b[m.t]=pc; b[m.f]=0;
+  let cst=st.castle;
+  if(pt===K){cst=c===WHITE?cst&12:cst&3;}
+  if(pt===R){if(c===WHITE){if(m.f===0)cst&=~2;if(m.f===7)cst&=~1;}else{if(m.f===56)cst&=~8;if(m.f===63)cst&=~4;}}
+  if(m.cap&&(m.cap&7)===R){const csq=m.t;if(csq===0)cst&=~2;if(csq===7)cst&=~1;if(csq===56)cst&=~8;if(csq===63)cst&=~4;}
+  if(m.flag===8){b[c===WHITE?7:63]=0;b[c===WHITE?5:61]=c|R;} // 王翼：仅移走 h 线车
+  if(m.flag===16){b[c===WHITE?0:56]=0;b[c===WHITE?3:59]=c|R;} // 后翼：仅移走 a 线车
+  if(m.flag===4){const cs=m.t-(c===WHITE?8:-8);b[cs]=0;}
+  let ep=-1;
+  if(m.flag===1)ep=(m.f+m.t)>>1; // 兵双步，记录中间格供吃过路兵
+  ns.castle=cst;
+  const promoP=pt===P&&(m.t>>3)===((c===WHITE)?7:0);
+  if(promoP){const pn=promo||Q; b[m.t]=c|pn; m.promo=pn;}
+  ns.ep=ep; ns.b=b;
+  ns.half=(pt===P||m.cap)?0:st.half+1;
+  if(c===BLACK)ns.full=st.full+1;
+  ns.turn=c===WHITE?BLACK:WHITE;
+  ns.last=m;
+  if(doSan)m.san=algSan(st,m,promo);
+  return ns;
+}
+function legalMoves(st){
+  const pseudo=genMoves(st.b,st.turn,st.castle,st.ep), out=[];
+  for(const m of pseudo){
+    const nb=st.b.slice(); nb[m.t]=nb[m.f]; nb[m.f]=0;
+    if(m.flag===4){const cs=m.t-(st.turn===WHITE?8:-8);nb[cs]=0;}
+    if(m.flag===8||m.flag===16){
+      const c=st.turn,opp=c===WHITE?BLACK:WHITE,home=c===WHITE?0:56;
+      if(inCheck(st.b,c)||attacked(st.b,home+4,opp)||attacked(st.b,home+(m.flag===8?5:3),opp))continue;
+    }
+    if(!inCheck(nb,st.turn))out.push(m);
+  }
+  return out;
+}
+function endStatus(st){
+  const lm=legalMoves(st);
+  if(lm.length)return null;
+  const ch=inCheck(st.b,st.turn);
+  return ch?st.turn:0; // 将死返回被将方；无子可动(逼和)返回0
+}
+/* ---- 代数记谱 ---- */
+const GLYPH={1:'',2:'N',3:'B',4:'R',5:'Q',6:'K'};
+function algSan(st,m,promo){
+  const b=st.b,c=st.turn,pc=b[m.f],pt=pieceOf(pc);
+  if(m.flag===8)return 'O-O';
+  if(m.flag===16)return 'O-O-O';
+  let s=pt!==P?GLYPH[pt]:'';
+  if(pt!==P){
+    const ts=cloneState(st); ts.b[m.f]=0; // 清走原棋子
+    const reach=genMoves(ts.b,c,ts.castle,ts.ep).filter(x=>x.t===m.t&&x.f!==m.f&&x.piece===pc);
+    if(reach.length){
+      const fU=reach.some(o=>(o.f&7)===(m.f&7)), rU=reach.some(o=>(o.f>>3)===(m.f>>3));
+      s+= fU?FILES[m.f&7] : (rU?String((m.f>>3)+1):'');
+    }
+  }
+  if(m.cap||m.flag===4){if(pt===P)s+=FILES[m.f&7]; s+='x';}
+  s+=FILES[m.t&7]+((m.t>>3)+1);
+  const promoP=pt===P&&(m.t>>3)===((c===WHITE)?7:0);
+  const pn=promo||m.promo;
+  if(promoP)s+='='+GLYPH[pn||Q];
+  const nb=applyMove(st,m,pn,false);
+  if(inCheck(nb.b,nb.turn))s+=legalMoves(nb).length?'+':'#';
+  return s;
+}
+/* ---- 评估：子力 + 位置（Piece-Square Tables, 白方视角） ---- */
+const PST_P=[0,0,0,0,0,0,0,0,50,50,50,50,50,50,50,50,10,10,20,30,30,20,10,10,5,5,10,25,25,10,5,5,0,0,0,20,20,0,0,0,5,-5,-10,0,0,-10,-5,5,5,10,10,-20,-20,10,10,5,0,0,0,0,0,0,0,0];
+const PST_N=[-50,-40,-30,-30,-30,-30,-40,-50,-40,-20,0,0,0,0,-20,-40,-30,0,10,15,15,10,0,-30,-30,5,15,20,20,15,5,-30,-30,0,15,20,20,15,0,-30,-30,5,10,15,15,10,5,-30,-40,-20,0,5,5,0,-20,-40,-50,-40,-30,-30,-30,-30,-40,-50];
+const PST_B=[-20,-10,-10,-10,-10,-10,-10,-20,-10,0,0,0,0,0,0,-10,-10,0,5,10,10,5,0,-10,-10,5,5,10,10,5,5,-10,-10,0,10,10,10,10,0,-10,-10,10,10,10,10,10,10,-10,-10,5,0,0,0,0,5,-10,-20,-10,-10,-10,-10,-10,-10,-20];
+const PST_R=[0,0,0,0,0,0,0,0,5,10,10,10,10,10,10,5,-5,0,0,0,0,0,0,-5,-5,0,0,0,0,0,0,-5,-5,0,0,0,0,0,0,-5,-5,0,0,0,0,0,0,-5,-5,0,0,0,0,0,0,-5,0,0,0,5,5,0,0,0];
+const PST_Q=[-20,-10,-10,-5,-5,-10,-10,-20,-10,0,0,0,0,0,0,-10,-10,0,5,5,5,5,0,-10,-5,0,5,5,5,5,0,-5,0,0,5,5,5,5,0,-5,-10,5,5,5,5,5,0,-10,-10,0,5,0,0,0,0,-10,-20,-10,-10,-5,-5,-10,-10,-20];
+const PST_K=[-30,-40,-40,-50,-50,-40,-40,-30,-30,-40,-40,-50,-50,-40,-40,-30,-30,-40,-40,-50,-50,-40,-40,-30,-30,-40,-40,-50,-50,-40,-40,-30,-20,-30,-30,-40,-40,-30,-30,-20,-10,-20,-20,-20,-20,-20,-20,-10,20,20,0,0,0,0,20,20,20,30,10,0,0,10,30,20];
+const PSTS=[null,PST_P,PST_N,PST_B,PST_R,PST_Q,PST_K];
+function evaluate(b){
+  let score=0;
+  for(let s=0;s<64;s++){const pc=b[s];if(!pc)continue;
+    const pt=pieceOf(pc),c=colorOf(pc);
+    const pst=(c===WHITE)?PSTS[pt][s]:PSTS[pt][s^56];
+    score+=(c===WHITE?1:-1)*(val[pt]+pst);
+  }
+  return score;
+}
+function orderMoves(lm){lm.sort((a,b)=>(b.cap?val[pieceOf(b.cap)]*10-(b.piece&7):0)-(a.cap?val[pieceOf(a.cap)]*10-(a.piece&7):0));return lm;}
+let nodes=0;
+function negamax(st,depth,alpha,beta){
+  const end=endStatus(st);
+  if(end!==null){return end===0?0:-(val[K]-(st.half));}
+  if(depth===0)return (st.turn===WHITE?1:-1)*evaluate(st.b);
+  nodes++;
+  if(st.half>=100)return 0;
+  let best=-Infinity;
+  for(const m of orderMoves(legalMoves(st))){
+    const ns=applyMove(st,m,Q,false);
+    const sc=-negamax(ns,depth-1,-beta,-alpha);
+    if(sc>best)best=sc;
+    if(best>alpha)alpha=best;
+    if(alpha>=beta)break;
+  }
+  return best;
+}
+function searchBest(st,depth,noise){
+  // 返回 {m:最佳着|null, score:该评估值的白方视角(厘兵)}；noise>0 时在顶级加抖动（用于低难度机器人）
+  if(endStatus(st)!==null)return {m:null,score:0};
+  const lm=orderMoves(legalMoves(st));
+  let bm=lm[0],best=-Infinity;
+  for(const m of lm){
+    const ns=applyMove(st,m,Q);
+    let sc=-negamax(ns,depth-1,-Infinity,Infinity);
+    if(noise)sc+=(Math.random()*2-1)*noise;
+    if(sc>best){best=sc;bm=m;}
+  }
+  return {m:bm,score:st.turn===WHITE?best:-best};
+}
+function bestMove(st,depth,noise){return searchBest(st,depth,noise).m;}
+/* ================= 界面层 ================= */
+const cv=document.getElementById('cv'), cx=cv.getContext('2d');
+const S0=()=>({b:initBoard(),turn:WHITE,castle:15,ep:-1,half:0,full:1});
+let stack=[S0()], cur=0, sel=-1, targets=[], pending=null, hintMove=null;
+/* ================= 人机模式 & 机器人档位 ================= */
+let mode='ai', humanColor=WHITE, level='club', aiBusy=false, aiTimer=null;
+const AI_LEVELS={
+  rookie :{name:'♙ 菜鸟',depth:1,eps:.40,noise:45,think:280},
+  amateur:{name:'♘ 业余',depth:2,eps:.15,noise:30,think:340},
+  club   :{name:'♗ 好手',depth:3,eps:0,noise:0,think:450},
+  master :{name:'♕ 大师',depth:4,eps:0,noise:0,think:650},
+  legend :{name:'♚ 传奇',depth:5,eps:0,noise:0,think:950}
+};
+/* ============ 开局书：取材自维基百科经典开局条目 ============ */
+/* moves 为 UCI 主变（如 'e2e4'）；AI 开局会沿主变行棋，展示真实开局理论 */
+const OPENINGS=[
+ {eco:'C50', zh:'意大利开局', en:'Italian Game / Giuoco Piano', moves:['e2e4','e7e5','g1f3','b8c6','f1c4','g8f6','d2d3']},
+ {eco:'C60', zh:'西班牙开局（鲁伊·洛佩斯）', en:'Ruy Lopez', moves:['e2e4','e7e5','g1f3','b8c6','f1b5','a7a6','b5a4']},
+ {eco:'C44', zh:'苏格兰开局', en:'Scotch Game', moves:['e2e4','e7e5','g1f3','b8c6','d2d4','e5d4','f3d4']},
+ {eco:'C47', zh:'四马开局', en:'Four Knights Game', moves:['e2e4','e7e5','g1f3','b8c6','b1c3','g8f6','f1b5']},
+ {eco:'B50', zh:'西西里防御 · 开放变例', en:'Sicilian Defence (Open)', moves:['e2e4','c7c5','g1f3','d7d6','d2d4','c5d4','f3d4','g8f6','b1c3']},
+ {eco:'B90', zh:'西西里防御 · 纳伊道夫变例', en:'Sicilian Defence, Najdorf', moves:['e2e4','c7c5','g1f3','d7d6','d2d4','c5d4','f3d4','g8f6','b1c3','a7a6']},
+ {eco:'B70', zh:'西西里防御 · 龙式变例', en:'Sicilian Defence, Dragon', moves:['e2e4','c7c5','g1f3','d7d6','d2d4','c5d4','f3d4','g8f6','b1c3','g7g6']},
+ {eco:'C02', zh:'法兰西防御 · 先进变例', en:'French Defence, Advance', moves:['e2e4','e7e6','d2d4','d7d5','e4e5']},
+ {eco:'C18', zh:'法兰西防御 · 维纳维尔变例', en:'French Defence, Winawer', moves:['e2e4','e7e6','d2d4','d7d5','b1c3','f8b4']},
+ {eco:'B12', zh:'卡罗-康防御 · 古典变例', en:'Caro-Kann Defence, Classical', moves:['e2e4','c7c6','d2d4','d7d5','b1c3','d5e4','c3e4','b8d7']},
+ {eco:'B10', zh:'卡罗-康防御 · 兑换变例', en:'Caro-Kann Defence, Exchange', moves:['e2e4','c7c6','d2d4','d7d5','e4d5','c6d5']},
+ {eco:'D30', zh:'后翼弃兵 · 正统防御', en:"Queen's Gambit Declined", moves:['d2d4','d7d5','c2c4','e7e6','b1c3','g8f6','c1g5']},
+ {eco:'D10', zh:'斯拉夫防御', en:'Slav Defence', moves:['d2d4','d7d5','c2c4','c7c6','g1f3','g8f6','b1c3']},
+ {eco:'E60', zh:'古印度防御', en:"King's Indian Defence", moves:['d2d4','g8f6','c2c4','g7g6','b1c3','f8g7','e2e4']},
+ {eco:'E20', zh:'尼姆佐-印度防御', en:'Nimzo-Indian Defence', moves:['d2d4','g8f6','c2c4','e7e6','b1c3','f8b4']},
+ {eco:'E12', zh:'新印度防御', en:"Queen's Indian Defence", moves:['d2d4','g8f6','c2c4','e7e6','g1f3','b7b6']},
+ {eco:'A10', zh:'英国式开局', en:'English Opening', moves:['c2c4','e7e5','b1c3','g8f6','g1f3','b8c6']},
+ {eco:'D02', zh:'伦敦体系', en:'London System', moves:['d2d4','d7d5','g1f3','g8f6','c1f4']}
+];
+const SQ2UCI=i=>FILES[i&7]+((i>>3)+1);
+const UCI2SQ=s=>(+s[1]-1)*8+(FILES.indexOf(s[0]));
+function uciToMove(st,uci){
+  const f=UCI2SQ(uci.slice(0,2)), t=UCI2SQ(uci.slice(2,4));
+  return legalMoves(st).find(m=>m.f===f&&m.t===t)||null;
+}
+function bookCand(plies){
+  // 前缀与已走着法一致、且书中仍有后续着的开局（plies=已走半回合数）
+  const cand=[];
+  for(const op of OPENINGS){
+    if(op.moves.length<=plies)continue;
+    let ok=true;
+    for(let i=0;i<plies;i++){
+      const m=stack[i+1].last;
+      if(!m||SQ2UCI(m.f)+SQ2UCI(m.t)!==op.moves[i]){ok=false;break;}
+    }
+    if(ok)cand.push(op);
+  }
+  return cand;
+}
+function bookNameAt(plies){
+  const cand=bookCand(plies);
+  if(!cand.length)return null;
+  if(cand.length===1)return cand[0];
+  // 多本同前缀开局并存：选“续着共享度最高”的书（同票取变例更长者）
+  const cnt={};
+  for(const op of cand)cnt[op.moves[plies]]=(cnt[op.moves[plies]]||0)+1;
+  let best=cand[0],v=-1;
+  for(const op of cand){
+    const c=cnt[op.moves[plies]];
+    if(c>v||(c===v&&op.moves.length>best.moves.length)){best=op;v=c;}
+  }
+  return best;
+}
+function bookReply(){
+  // AI 已按书走至第 cur 半回合：书内仍有续着则返回书着
+  const hit=bookNameAt(cur);
+  return hit?uciToMove(S(),hit.moves[cur]):null;
+}
+const S=()=>stack[cur];
+const GLYPHS={1:'♟',2:'♞',3:'♝',4:'♜',5:'♛',6:'♚'};
+const COLNAME=['白方','黑方'];
+const CELL=()=>cv.width/8;
+function sqName(i){return FILES[i&7]+((i>>3)+1);}
+function rAFDraw(){draw();}
+function draw(){
+  const C=CELL();
+  for(let i=0;i<64;i++){
+    const f=i&7, r=i>>3, x=f*C, y=(7-r)*C;
+    cx.fillStyle=((r+f)&1)?'#b58863':'#f0d9b5';
+    if(stack[cur].last&&(stack[cur].last.f===i||stack[cur].last.t===i))cx.fillStyle=(cx.fillStyle==='#f0d9b5')?'#f7ec7a':'#d9b64a';
+    if(i===sel)cx.fillStyle='#e8c96a';
+    cx.fillRect(x,y,C,C);
+    const pc=stack[cur].b[i];
+    if(pc){
+      const gx=x+C/2, gy=y+C/2;
+      cx.font=(C*0.82)+'px Georgia,serif';
+      cx.textAlign='center';cx.textBaseline='middle';
+      cx.lineWidth=Math.max(1.2,C*0.045);
+      const c=colorOf(pc)===WHITE;
+      cx.fillStyle=c?'#f9f7ee':'#15161c';
+      cx.strokeStyle=c?'#15161c':'#f2efe6';
+      cx.lineWidth=Math.max(1,C*0.03);
+      cx.strokeText(GLYPHS[pieceOf(pc)],gx,gy);
+      cx.fillText(GLYPHS[pieceOf(pc)],gx,gy);
+    }
+  }
+  cx.fillStyle='rgba(60,30,0,.75)';cx.font=(C*0.26)+'px sans-serif';cx.textAlign='left';cx.textBaseline='top';
+  for(let f=0;f<8;f++)cx.fillText(FILES[f],f*C+C*0.06,(8*C)-C*0.72);
+  for(let r=0;r<8;r++)cx.fillText(String(r+1),C*0.06,(7-r)*C+C*0.06);
+  if(sel>=0){
+    for(const m of targets){
+      const f=m.t&7,r=m.t>>3,x=f*C,y=(7-r)*C;
+      cx.beginPath();cx.arc(x+C/2,y+C/2,C*0.16,0,7);
+      cx.fillStyle=m.cap?'rgba(0,0,0,.28)':'rgba(0,0,0,.22)';cx.fill();
+    }
+  }
+  if(hintMove){
+    for(const g of [hintMove.f,hintMove.t]){
+      const f=g&7,r=g>>3,x=f*C,y=(7-r)*C;
+      cx.strokeStyle='#ff9d2e';cx.lineWidth=Math.max(2,C*0.07);
+      cx.strokeRect(x+C*0.05,y+C*0.05,C*0.9,C*0.9);
+    }
+  }
+}
+function clickAt(ev){
+  const rc=cv.getBoundingClientRect();
+  const f=Math.floor((ev.clientX-rc.left)*8/rc.width);
+  const r=Math.floor((ev.clientY-rc.top)*8/rc.height);
+  if(f<0||f>7||r<0||r>7)return;
+  const i=(7-r)*8+f;
+  if(pending)return;
+  if(mode==='ai'&&S().turn!==humanColor)return; // 机器人回合禁止操作
+  if(endStatus(S())!==null){sel=-1;targets=[];draw();return;}
+  const pc=S().b[i];
+  if(sel>=0){
+    const m=targets.find(t=>t.t===i);
+    if(m){sel=-1;targets=[];doMove(m);draw();return;}
+    if(pc&&colorOf(pc)===S().turn){select(i);return;}
+    sel=-1;targets=[];draw();return;
+  }
+  if(pc&&colorOf(pc)===S().turn)select(i); else {sel=-1;targets=[];draw();}
+}
+function select(i){sel=i;targets=legalMoves(S()).filter(m=>m.f===i);draw();}
+function doMove(m){
+  if((S().b[m.f]&7)===P&&(m.t>>3)===((S().turn===WHITE)?7:0)){
+    pending={m};showPromo(m);return;
+  }
+  commit(m);
+}
+function commit(m,promo){
+  const ns=applyMove(S(),m,promo||Q,true);
+  stack=stack.slice(0,cur+1); stack.push(ns); cur++;
+  sel=-1;targets=[];
+  updateAll();
+}
+function showPromo(m){
+  if(document.getElementById('promoDlg'))return;
+  const d=document.createElement('div');
+  d.id='promoDlg';
+  d.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:99;';
+  const box=document.createElement('div');
+  box.style.cssText='background:#2e2a3d;border-radius:12px;padding:18px 22px;text-align:center;color:#eee;';
+  box.innerHTML='<div style="margin-bottom:10px">兵升变为：</div>';
+  const btns=['♛','♜','♝','♞'];
+  const PIs=[Q,R,B,N];
+  btns.forEach((g,i)=>{
+    const b=document.createElement('button');
+    b.textContent=g;
+    b.style.cssText='font-size:26px;width:52px;height:52px;margin:0 5px;background:#3a3550;border:1px solid #555070;border-radius:10px;cursor:pointer;color:'+(S().turn===WHITE?'#fff':'#bbb');
+    b.onclick=()=>{document.body.removeChild(d);const p=pending;pending=null;commit(p.m,PIs[i]);};
+    box.appendChild(b);
+  });
+  d.appendChild(box);
+  document.body.appendChild(d);
+}
+function updateAll(){
+  hintMove=null; // 局面变化后旧推荐失效
+  updateTurn();updateEval();updateMoves();updateStatus();updateBookLine();
+  draw();
+  maybeAi();
+  updateAiThink();
+}
+function updateTurn(){
+  const e=endStatus(S());
+  document.getElementById('turnBadge').textContent=e?null:COLNAME[S().turn===WHITE?0:1]+'走棋';
+  document.getElementById('moveCount').textContent='第 '+S().full+' 回合';
+  const undoBtn=document.getElementById('undoBtn');
+  if(mode==='ai')undoBtn.disabled=!(S().turn===humanColor&&cur>=2&&e===null);
+  else undoBtn.disabled=(cur===0);
+}
+function winProbCp(cp){ // cp=白方视角厘兵分 → 白方胜率%
+  const w=1/(1+Math.pow(10,-cp/400));
+  return Math.max(1,Math.min(99,Math.round(w*100)));
+}
+function updateEval(){
+  const st=S();
+  const hint=document.getElementById('evalHint');
+  const who=COLNAME[st.turn===WHITE?0:1];
+  const terminal=endStatus(st);
+  let sc, bm=null;
+  if(terminal!==null){sc=terminal===0?0:(terminal===WHITE?-20000:20000);}
+  else{const r=searchBest(st,2); bm=r.m; sc=r.score;}
+  const el=document.getElementById('evalScore');
+  const pawns=(sc/100).toFixed(1);
+  const val=sc>0?'+'+pawns:pawns;
+  el.textContent=val;
+  el.style.color=sc>=0?'#ff8a80':'#80d8ff';
+  const wp=terminal===0?50:(terminal===WHITE?0:(terminal===BLACK?100:winProbCp(sc)));
+  document.getElementById('winWhiteL').textContent='白 '+wp+'%';
+  document.getElementById('winBlackL').textContent='黑 '+(100-wp)+'%';
+  document.getElementById('winBar').style.height=Math.max(1,Math.min(99,wp))+'%';
+  if(terminal!==null)hint.textContent=terminal===0?'已和棋（胜率 50%）':'已分胜负，'+COLNAME[terminal===WHITE?1:0]+'获胜';
+  else hint.textContent=who+'行棋 · 引擎推荐: '+(bm?(bm.san||sqName(bm.f)+'-'+sqName(bm.t)):'—');
+}
+function updateMoves(){
+  const el=document.getElementById('moveList');
+  if(cur===0){el.innerHTML='<span style="color:#7a7296">尚无着法</span>';return;}
+  let html='';
+  for(let i=1;i<=cur;i++){
+    const mover=stack[i-1].turn; // 走棋方由走子前状态决定
+    if(mover===WHITE){if(html)html+='<br>';html+='<span class="idx">'+stack[i-1].full+'.</span> ';}
+    html+='<span'+(i===cur?' class="last"':'')+'>'+(stack[i].last.san||'?')+'</span> ';
+  }
+  el.innerHTML=html;
+  el.scrollTop=el.scrollHeight;
+}
+function updateStatus(){
+  const bar=document.getElementById('statusBar');
+  const end=endStatus(S());
+  if(S().half>=100){bar.style.display='block';bar.textContent='50 回合未吃子未动兵 → 和棋';bar.className='winnerBox';return;}
+  if(end!==null){
+    bar.style.display='block';
+    if(end===0){bar.textContent='和棋：无子可动（逼和）';bar.className='';}
+    else{bar.textContent=COLNAME[end===WHITE?0:1]+'被将死，'+(end===WHITE?'黑':'白')+'方获胜！';bar.className='winnerBox';}
+    return;
+  }
+  const c=S().turn;
+  if(inCheck(S().b,c)){bar.style.display='block';bar.textContent=c===WHITE?'白方被将军！':'黑方被将军！';bar.className='';}
+  else bar.style.display='none';
+}
+/* ================= 人机调度 & 开局识别 ================= */
+function updateAiThink(){
+  const el=document.getElementById('aiThink');
+  const term=endStatus(S());
+  if(mode!=='ai'){el.textContent='双人模式';return;}
+  if(term!==null){el.textContent='对局结束';return;}
+  if(S().turn===humanColor){el.textContent='你的回合 · '+AI_LEVELS[level].name+' 执对';}
+  else el.textContent=aiBusy?COLNAME[S().turn===WHITE?0:1]+'机器人思考中…':'';
+}
+function updateBookLine(){
+  const el=document.getElementById('bookCur');
+  const hit=bookNameAt(cur), n=bookCand(cur).length;
+  let txt='开局：尚未进入开局库 / 已脱离书本线';
+  if(n>0)txt=(n===1?'开局识别：':'开局（'+n+' 个候选主变 · 当前续着）：')+hit.zh+'（ECO '+hit.eco+' · '+hit.en+'）';
+  el.textContent=txt;
+}
+function maybeAi(){
+  if(mode!=='ai'||aiBusy)return;
+  const st=S();
+  if(endStatus(st)!==null||st.turn===humanColor)return;
+  aiBusy=true;
+  const think=AI_LEVELS[level].think;
+  aiTimer=setTimeout(()=>{aiTimer=null;aiMove();},think);
+}
+function aiMove(){
+  aiBusy=false;
+  if(mode!=='ai')return;
+  const st=S();
+  if(endStatus(st)!==null||st.turn===humanColor)return;
+  const cfg=AI_LEVELS[level];
+  let m=bookReply(); // 开局阶段优先沿维基百科主变行棋
+  if(!m){
+    if(cfg.eps&&Math.random()<cfg.eps){
+      const lm=legalMoves(st);
+      m=lm[(Math.random()*lm.length)|0];
+    }else m=searchBest(st,cfg.depth,cfg.noise).m;
+  }
+  if(!m){updateAll();return;}
+  doMove(m);
+}
+function resetGame(){
+  if(aiTimer){clearTimeout(aiTimer);aiTimer=null;}
+  aiBusy=false;
+  stack=[S0()];cur=0;pending=null;sel=-1;targets=[];hintMove=null;
+  updateAll();
+}
+function resizeCanvas(){
+  const rc=cv.getBoundingClientRect();
+  const dpr=window.devicePixelRatio||1;
+  const w=Math.max(64,Math.round(Math.min(rc.width,rc.height)*dpr));
+  cv.width=w; cv.height=w;
+}
+window.addEventListener('resize',()=>{resizeCanvas();draw();});
+resizeCanvas();
+document.getElementById('cv').addEventListener('click',clickAt);
+function undoOnce(){
+  if(aiTimer){clearTimeout(aiTimer);aiTimer=null;}
+  aiBusy=false;
+  if(mode==='ai'){
+    if(S().turn!==humanColor||cur<2)return;
+    cur-=2; // 撤销我方一着 + 机器人回应
+  }else{
+    if(cur<=0)return;
+    cur--;
+  }
+  pending=null;sel=-1;targets=[];hintMove=null;
+  updateAll();
+}
+document.getElementById('undoBtn').addEventListener('click',undoOnce);
+document.getElementById('hintBtn').addEventListener('click',()=>{
+  const hint=document.getElementById('evalHint');
+  const who=COLNAME[S().turn===WHITE?0:1];
+  const terminal=endStatus(S());
+  if(terminal!==null){
+    hintMove=null;draw();
+    hint.innerHTML='对局已结束'+(terminal===0?'（和棋）':'，'+(terminal===WHITE?'白':'黑')+'方胜')+'，无法给出最佳着';
+    return;
+  }
+  if(mode==='ai'&&S().turn!==humanColor){
+    hint.innerHTML='机器人回合中，请等待落子后再索取最佳着';
+    return;
+  }
+  const r=searchBest(S(),3);
+  const bm=r.m;
+  if(!bm){hint.textContent='引擎未能找到可行着法';return;}
+  hintMove=bm;
+  draw(); // 立即高亮推荐着法的起止格
+  hint.innerHTML='💡 AI 最佳着：<b>'+who+' 走 '+sqName(bm.f)+' → '+sqName(bm.t)+'</b>'+(bm.cap?'（吃子）':'')+' · 引擎评估 ≈ '+(r.score/100).toFixed(1);
+});
+document.getElementById('newBtn').addEventListener('click',resetGame);
+/* ---- 开局书：预览与摆子 ---- */
+function uciToSan(op){
+  let st=S0(),out=[];
+  for(const u of op.moves){
+    const m=uciToMove(st,u);
+    if(!m)break;
+    st=applyMove(st,m,undefined,true);
+    out.push(st.last.san||'?');
+  }
+  return out.join(' ');
+}
+function startBookAt(i){
+  if(aiTimer){clearTimeout(aiTimer);aiTimer=null;}
+  aiBusy=false;
+  const op=OPENINGS[i];
+  const wantPlies=(mode==='ai'&&humanColor===BLACK)?7:6;
+  const st=[S0()];
+  for(let k=0;k<op.moves.length&&st.length-1<wantPlies;k++){
+    const m=uciToMove(st[st.length-1],op.moves[k]);
+    if(!m)break;
+    st.push(applyMove(st[st.length-1],m,undefined,true));
+  }
+  stack=st;cur=stack.length-1;pending=null;sel=-1;targets=[];hintMove=null;
+  updateAll();
+}
+const bookSel=document.getElementById('bookSel');
+bookSel.innerHTML='<option value="-1">标准初始局面</option>'+OPENINGS.map((o,i)=>'<option value="'+i+'">'+o.zh+'（'+o.eco+'）</option>').join('');
+function previewBook(){
+  const i=+bookSel.value;
+  document.getElementById('bookLine').textContent=i<0?'标准国际象棋初始局面，可自由对弈。':('主变 '+OPENINGS[i].moves.length+' 步：'+uciToSan(OPENINGS[i]));
+}
+bookSel.addEventListener('change',previewBook);
+previewBook();
+document.getElementById('bookGoBtn').addEventListener('click',()=>{
+  const i=+bookSel.value;
+  if(i<0){resetGame();return;}
+  startBookAt(i);
+});
+/* ---- 模式 / 执子 / 难度切换 ---- */
+document.getElementById('modeSel').addEventListener('change',e=>{
+  mode=e.target.value;
+  document.getElementById('humanSideSel').disabled=(mode==='pvp');
+  resetGame();
+});
+document.getElementById('humanSideSel').addEventListener('change',e=>{humanColor=+e.target.value;resetGame();});
+document.getElementById('diffSel').addEventListener('change',e=>{level=e.target.value;updateAiThink();});
+updateAll();
+</script>
+</body>
+</html>
